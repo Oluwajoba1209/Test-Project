@@ -12,7 +12,7 @@ env:
   REGISTRY: devopslearningacr123.azurecr.io
   IMAGE: my-first-app
   RESOURCE_GROUP: devops-learning-rg
-  WEBAPP: my-first-devops-app
+  CLUSTER: devops-learning-aks
 
 jobs:
   deploy:
@@ -35,7 +35,10 @@ jobs:
           docker build --platform linux/amd64 --provenance=false -t $REGISTRY/$IMAGE:${{ github.sha }} .
           docker push $REGISTRY/$IMAGE:${{ github.sha }}
 
-      - name: Deploy to App Service
+      - name: Connect to the cluster
+        run: az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER
+
+      - name: Deploy to AKS
         run: |
-          az webapp config set --resource-group $RESOURCE_GROUP --name $WEBAPP \
-            --linux-fx-version "DOCKER|$REGISTRY/$IMAGE:${{ github.sha }}"
+          kubectl set image deployment/my-first-app my-first-app=$REGISTRY/$IMAGE:${{ github.sha }}
+          kubectl rollout status deployment/my-first-app --timeout=120s
