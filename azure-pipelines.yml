@@ -18,8 +18,17 @@ variables:
 steps:
   - checkout: self
 
+  - script: docker build --platform linux/amd64 -t $(registry).azurecr.io/$(image):$(Build.SourceVersion) .
+    displayName: Build image
+
+  - script: >
+      docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+      aquasec/trivy:<version> image --scanners vuln --severity CRITICAL --exit-code 1
+      $(registry).azurecr.io/$(image):$(Build.SourceVersion)
+    displayName: Scan image (fail on CRITICAL)
+
   - task: AzureCLI@2
-    displayName: Build and push image
+    displayName: Push image
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     inputs:
       azureSubscription: azure-connection
@@ -27,6 +36,5 @@ steps:
       scriptLocation: inlineScript
       inlineScript: |
         az acr login --name $(registry)
-        docker build --platform linux/amd64 -t $(registry).azurecr.io/$(image):$(Build.SourceVersion) .
         docker push $(registry).azurecr.io/$(image):$(Build.SourceVersion)
         az acr manifest show-metadata --registry $(registry) --name $(image):$(Build.SourceVersion)
