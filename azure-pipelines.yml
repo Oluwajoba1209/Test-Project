@@ -27,6 +27,13 @@ steps:
       $(registry).azurecr.io/$(image):$(Build.SourceVersion)
     displayName: Scan image (fail on CRITICAL)
 
+  - script: |
+      echo "Secret value is: $(demoSecret)"
+      echo "Length from environment: ${#DEMO}"
+    env:
+      DEMO: $(demoSecret)
+    displayName: Secret variable demo  
+
   - task: AzureCLI@2
     displayName: Push image
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
