@@ -1,0 +1,32 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-24.04
+
+variables:
+  registry: devopslearningacr123
+  image: my-first-app
+
+steps:
+  - checkout: self
+
+  - task: AzureCLI@2
+    displayName: Build and push image
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    inputs:
+      azureSubscription: azure-connection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az acr login --name $(registry)
+        docker build --platform linux/amd64 -t $(registry).azurecr.io/$(image):$(Build.SourceVersion) .
+        docker push $(registry).azurecr.io/$(image):$(Build.SourceVersion)
+        az acr manifest show-metadata --registry $(registry) --name $(image):$(Build.SourceVersion)
