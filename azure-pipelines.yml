@@ -14,19 +14,57 @@ pool:
 variables:
   registry: devopslearningacr123
   image: my-first-app
+  rg: devops-learning-rg
+  webapp: my-first-devops-app
 
-steps:
-  - checkout: self
+stages:
+  - stage: Build
+    displayName: Build and scan
+    jobs:
+      - job: BuildScan
+        steps:
+          - checkout: self
 
-  - task: AzureCLI@2
-    displayName: Build and push image
+          - script: docker build --platform linux/amd64 -t $(registry).azurecr.io/$(image):$(Build.SourceVersion) .
+            displayName: Build image
+
+          - script: >
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+              aquasec/trivy:0.76.0 image --scanners vuln --severity CRITICAL --exit-code 1
+              $(registry).azurecr.io/$(image):$(Build.SourceVersion)
+            displayName: Scan image (fail on CRITICAL)
+
+          - script: |
+              mkdir -p $(Build.ArtifactStagingDirectory)
+              docker save -o $(Build.ArtifactStagingDirectory)/image.tar $(registry).azurecr.io/$(image):$(Build.SourceVersion)
+            displayName: Save image
+
+          - publish: $(Build.ArtifactStagingDirectory)
+            artifact: image
+
+  - stage: Deploy
+    displayName: Deploy to production
+    dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-    inputs:
-      azureSubscription: azure-connection
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        az acr login --name $(registry)
-        docker build --platform linux/amd64 -t $(registry).azurecr.io/$(image):$(Build.SourceVersion) .
-        docker push $(registry).azurecr.io/$(image):$(Build.SourceVersion)
-        az acr manifest show-metadata --registry $(registry) --name $(image):$(Build.SourceVersion)
+    jobs:
+      - deployment: DeployWeb
+        displayName: Push image and update web app
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: image
+
+                - task: AzureCLI@2
+                  displayName: Push image and update web app
+                  inputs:
+                    azureSubscription: azure-connection
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      docker load -i $(Pipeline.Workspace)/image/image.tar
+                      az acr login --name $(registry)
+                      docker push $(registry).azurecr.io/$(image):$(Build.SourceVersion)
+                      az webapp config set --resource-group $(rg) --name $(webapp) --linux-fx-version "DOCKER|$(registry).azurecr.io/$(image):$(Build.SourceVersion)"
